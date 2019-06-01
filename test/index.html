@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title></title>
+    <style>
+        /*.parent:after {*/
+        /*content: '';*/
+        /*display: block;*/
+        /*clear: both;*/
+        /*}*/
+
+        .parent {
+            border: 1px solid black;
+            max-width: 1200px;
+            margin: 0 auto;
+            /*overflow: hidden;*/
+        }
+
+        .row:after,.row:before {
+            content: '';
+            display: block;
+            visibility: hidden;
+            height: 0;
+            clear: both;
+            *zoom: 0
+        }
+
+
+
+        @media all and (max-width: 1000px){
+            [class *='col-'] {
+                float: left;
+                box-sizing: border-box;
+                padding: 10px;
+                border: 1px solid blue;
+            }
+            .col-1 {
+                width: 16.66%;
+            }
+
+            .col-2 {
+                width: 33.33%;
+            }
+
+            .col-3 {
+                width: 50%;
+            }
+
+            .col-4 {
+                width: 66.66%;
+            }
+        }
+
+        @media all and (min-width: 1001px) {
+            [class *='col-'] {
+                float: left;
+                box-sizing: border-box;
+                padding: 10px;
+                border: 1px solid red;
+            }
+            .col-1 {
+                width: 16.66%;
+            }
+
+            .col-2 {
+                width: 33.33%;
+            }
+
+            .col-3 {
+                width: 50%;
+            }
+
+            .col-4 {
+                width: 66.66%;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="parent clearFix">
+    <div class="row">
+        <div class="col-1">col-1</div>
+        <div class="col-1">col-1</div>
+        <div class="col-1">col-1</div>
+        <div class="col-1">col-1</div>
+        <div class="col-1">col-1</div>
+        <div class="col-1">col-1</div>
+    </div>
+    <div class="row">
+        <div class="col-1">col-1</div>
+        <div class="col-2">col-2</div>
+        <div class="col-3">col-3</div>
+    </div>
+    <div class="row">
+        <div class="col-2">col-2</div>
+        <div class="col-4">col-4</div>
+    </div>
+</div>
+<script src="js/index.js" type="text/javascript"></script>
+</body>
+</html>
