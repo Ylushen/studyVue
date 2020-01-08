@@ -9,7 +9,7 @@ export function initUse (Vue: GlobalAPI) {
       return this
     }
 
-    // additional parameters
+    // 将arguments第一个参数转换成真正的数组
     const args = toArray(arguments, 1)
     args.unshift(this)
     if (typeof plugin.install === 'function') {

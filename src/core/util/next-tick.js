@@ -84,6 +84,7 @@ if (typeof Promise !== 'undefined' && isNative(Promise)) {
   }
 }
 
+// 实现一个简单的回调，在当前程序运行完后运行
 export function nextTick (cb?: Function, ctx?: Object) {
   let _resolve
   callbacks.push(() => {

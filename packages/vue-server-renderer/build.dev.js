@@ -186,37 +186,6 @@ var hyphenate = cached(function (str) {
 });
 
 /**
- * Simple bind polyfill for environments that do not support it,
- * e.g., PhantomJS 1.x. Technically, we don't need this anymore
- * since native bind is now performant enough in most browsers.
- * But removing it would mean breaking code that was able to run in
- * PhantomJS 1.x, so this must be kept for backward compatibility.
- */
-
-/* istanbul ignore next */
-function polyfillBind (fn, ctx) {
-  function boundFn (a) {
-    var l = arguments.length;
-    return l
-      ? l > 1
-        ? fn.apply(ctx, arguments)
-        : fn.call(ctx, a)
-      : fn.call(ctx)
-  }
-
-  boundFn._length = fn.length;
-  return boundFn
-}
-
-function nativeBind (fn, ctx) {
-  return fn.bind(ctx)
-}
-
-var bind = Function.prototype.bind
-  ? nativeBind
-  : polyfillBind;
-
-/**
  * Mix properties into target object.
  */
 function extend (to, _from) {
@@ -700,11 +669,15 @@ var isFF = UA && UA.match(/firefox\/(\d+)/);
 
 // Firefox has a "watch" function on Object.prototype...
 var nativeWatch = ({}).watch;
+
+var supportsPassive = false;
 if (inBrowser) {
   try {
     var opts = {};
     Object.defineProperty(opts, 'passive', ({
       get: function get () {
+        /* istanbul ignore next */
+        supportsPassive = true;
       }
     })); // https://github.com/facebook/flow/issues/285
     window.addEventListener('test-passive', null, opts);
@@ -727,9 +700,6 @@ var isServerRendering = function () {
   }
   return _isServer
 };
-
-// detect devtools
-var devtools = inBrowser && window.__VUE_DEVTOOLS_GLOBAL_HOOK__;
 
 /* istanbul ignore next */
 function isNative (Ctor) {
@@ -903,7 +873,9 @@ var formatComponentName = (noop);
   warn = function (msg, vm) {
     var trace = vm ? generateComponentTrace(vm) : '';
 
-    if (hasConsole && (!config.silent)) {
+    if (config.warnHandler) {
+      config.warnHandler.call(null, msg, vm, trace);
+    } else if (hasConsole && (!config.silent)) {
       console.error(("[Vue warn]: " + msg + trace));
     }
   };
@@ -1008,6 +980,12 @@ Dep.prototype.depend = function depend () {
 Dep.prototype.notify = function notify () {
   // stabilize the subscriber list first
   var subs = this.subs.slice();
+  if ( !config.async) {
+    // subs aren't sorted in scheduler if not running async
+    // we need to sort them now to make sure they fire in correct
+    // order
+    subs.sort(function (a, b) { return a.id - b.id; });
+  }
   for (var i = 0, l = subs.length; i < l; i++) {
     subs[i].update();
   }
@@ -1121,7 +1099,7 @@ var Observer = function Observer (value) {
 Observer.prototype.walk = function walk (obj) {
   var keys = Object.keys(obj);
   for (var i = 0; i < keys.length; i++) {
-    defineReactive$$1(obj, keys[i]);
+    defineReactive(obj, keys[i]);
   }
 };
 
@@ -1188,7 +1166,7 @@ function observe (value, asRootData) {
 /**
  * Define a reactive property on an Object.
  */
-function defineReactive$$1 (
+function defineReactive (
   obj,
   key,
   val,
@@ -1233,7 +1211,7 @@ function defineReactive$$1 (
         return
       }
       /* eslint-enable no-self-compare */
-      if (customSetter) {
+      if ( customSetter) {
         customSetter();
       }
       // #7981: for accessor properties without setter
@@ -1255,7 +1233,8 @@ function defineReactive$$1 (
  * already exist.
  */
 function set (target, key, val) {
-  if (isUndef(target) || isPrimitive(target)
+  if (
+    (isUndef(target) || isPrimitive(target))
   ) {
     warn(("Cannot set reactive property on undefined, null, or primitive value: " + ((target))));
   }
@@ -1270,7 +1249,7 @@ function set (target, key, val) {
   }
   var ob = (target).__ob__;
   if (target._isVue || (ob && ob.vmCount)) {
-    warn(
+     warn(
       'Avoid adding reactive properties to a Vue instance or its root $data ' +
       'at runtime - declare it upfront in the data option.'
     );
@@ -1280,7 +1259,7 @@ function set (target, key, val) {
     target[key] = val;
     return val
   }
-  defineReactive$$1(ob.value, key, val);
+  defineReactive(ob.value, key, val);
   ob.dep.notify();
   return val
 }
@@ -1405,7 +1384,7 @@ strats.data = function (
 ) {
   if (!vm) {
     if (childVal && typeof childVal !== 'function') {
-      warn(
+       warn(
         'The "data" option should be a function ' +
         'that returns a per-instance value in component ' +
         'definitions.',
@@ -1468,7 +1447,7 @@ function mergeAssets (
 ) {
   var res = Object.create(parentVal || null);
   if (childVal) {
-    assertObjectType(key, childVal, vm);
+     assertObjectType(key, childVal, vm);
     return extend(res, childVal)
   } else {
     return res
@@ -1643,9 +1622,9 @@ function normalizeDirectives (options) {
   var dirs = options.directives;
   if (dirs) {
     for (var key in dirs) {
-      var def$$1 = dirs[key];
-      if (typeof def$$1 === 'function') {
-        dirs[key] = { bind: def$$1, update: def$$1 };
+      var def = dirs[key];
+      if (typeof def === 'function') {
+        dirs[key] = { bind: def, update: def };
       }
     }
   }
@@ -1738,7 +1717,7 @@ function resolveAsset (
   if (hasOwn(assets, PascalCaseId)) { return assets[PascalCaseId] }
   // fallback to prototype chain
   var res = assets[id] || assets[camelizedId] || assets[PascalCaseId];
-  if (warnMissing && !res) {
+  if ( warnMissing && !res) {
     warn(
       'Failed to resolve ' + type.slice(0, -1) + ': ' + id,
       options
@@ -1800,7 +1779,7 @@ function getPropDefaultValue (vm, prop, key) {
   }
   var def = prop.default;
   // warn against non-factory defaults for Object & Array
-  if (isObject(def)) {
+  if ( isObject(def)) {
     warn(
       'Invalid default value for prop "' + key + '": ' +
       'Props with type Object/Array must use a factory function ' +
@@ -2021,6 +2000,17 @@ function invokeWithErrorHandling (
 }
 
 function globalHandleError (err, vm, info) {
+  if (config.errorHandler) {
+    try {
+      return config.errorHandler.call(null, err, vm, info)
+    } catch (e) {
+      // if the user intentionally throws the original error in the handler,
+      // do not log it twice
+      if (e !== err) {
+        logError(e, null, 'config.errorHandler');
+      }
+    }
+  }
   logError(err, vm, info);
 }
 
@@ -2070,8 +2060,6 @@ if (typeof Promise !== 'undefined' && isNative(Promise)) ; else if (!isIE && typ
     characterData: true
   });
 } else if (typeof setImmediate !== 'undefined' && isNative(setImmediate)) ;
-
-/*  */
 
 /*  */
 
@@ -2197,8 +2185,6 @@ function getTagNamespace (tag) {
 }
 
 var isTextInputType = makeMap('text,number,password,search,email,tel,url');
-
-/*  */
 
 /*  */
 
@@ -2758,31 +2744,42 @@ var buildRegex = cached(function (delimiters) {
 
 
 
+
 function parseText (
   text,
   delimiters
 ) {
   var tagRE = delimiters ? buildRegex(delimiters) : defaultTagRE;
+  // 检测是否存在{{}}这种文本，如果有，就进行解析
   if (!tagRE.test(text)) {
     return
   }
+  // 解析过程
   var tokens = [];
   var rawTokens = [];
+  // 初始化正则下标
   var lastIndex = tagRE.lastIndex = 0;
+  // match：存储匹配到的结果
+  // index：匹配到的位置
+  // tokenValue：匹配到的变量值
   var match, index, tokenValue;
+  // 循环遍历处理变量位置
+  // 对1{{2}}3{{4}}5...这种方式进行分组添加
   while ((match = tagRE.exec(text))) {
     index = match.index;
     // push text token
     if (index > lastIndex) {
+      // 原始token，先添加拆分后知道{{前的文本
       rawTokens.push(tokenValue = text.slice(lastIndex, index));
       tokens.push(JSON.stringify(tokenValue));
     }
-    // tag token
+    // 去掉其他的，直接调用参数
     var exp = parseFilters(match[1].trim());
     tokens.push(("_s(" + exp + ")"));
     rawTokens.push({ '@binding': exp });
     lastIndex = index + match[0].length;
   }
+  // 添加}}后的文本
   if (lastIndex < text.length) {
     rawTokens.push(tokenValue = text.slice(lastIndex));
     tokens.push(JSON.stringify(tokenValue));
@@ -2872,7 +2869,7 @@ function addHandler (
   // warn prevent and passive modifier
   /* istanbul ignore if */
   if (
-    warn &&
+     warn &&
     modifiers.prevent && modifiers.passive
   ) {
     warn(
@@ -3027,7 +3024,7 @@ function rangeSetItem (
 function transformNode (el, options) {
   var warn = options.warn || baseWarn;
   var staticClass = getAndRemoveAttr(el, 'class');
-  if (staticClass) {
+  if ( staticClass) {
     var res = parseText(staticClass, options.delimiters);
     if (res) {
       warn(
@@ -3123,7 +3120,7 @@ var startTagOpen = new RegExp(("^<" + qnameCapture));
 var startTagClose = /^\s*(\/?)>/;
 var endTag = new RegExp(("^<\\/" + qnameCapture + "[^>]*>"));
 var doctype = /^<!DOCTYPE [^>]+>/i;
-// #7298: escape - to avoid being pased as HTML comment when inlined in page
+// #7298: escape - to avoid being passed as HTML comment when inlined in page
 var comment = /^<!\--/;
 var conditionalComment = /^<!\[/;
 
@@ -3152,20 +3149,34 @@ function decodeAttr (value, shouldDecodeNewlines) {
   return value.replace(re, function (match) { return decodingMap[match]; })
 }
 
+/**
+ * @param html 模板字符串
+ * @param options 配置参数，包含运行中的周期钩子，start, end, chars, common
+ * @return null
+ * stack dom栈，按顺序将先阶段解析的dom压入栈中，每次遇到闭合标签，就弹出（只会压入非自闭合标签）
+ * index 记录当前解析的位置在原模板中位置的下标
+ * lastTag 栈顶端的元素名称。 last 缓存当前解析的模板，用来判断解析是否进入死循环
+ * 处理过程：
+ * 1.使用while循环的方式进行模板的切割处理。通过<符号匹配开始标签，闭合标签，注释文本等分类，调用相对应的方法进行处理
+ * 2.处理文本信息时，调用parseText方法，进行文本节点的匹配，将其中的变量转换为相应节点的处理方法。返回一个对象，包含文本数组和方法数组
+ * 3.当前html切割匹配完成后，跳出当前循环，方法结束
+ * */
 function parseHTML (html, options) {
   var stack = [];
   var expectHTML = options.expectHTML;
-  var isUnaryTag$$1 = options.isUnaryTag || no;
-  var canBeLeftOpenTag$$1 = options.canBeLeftOpenTag || no;
+  var isUnaryTag = options.isUnaryTag || no;
+  var canBeLeftOpenTag = options.canBeLeftOpenTag || no;
   var index = 0;
   var last, lastTag;
   while (html) {
     last = html;
-    // Make sure we're not in a plaintext content element like script/style
+    // 确保我们不在脚本/样式之类的纯文本内容元素中
     if (!lastTag || !isPlainTextElement(lastTag)) {
+      // 开始解析
       var textEnd = html.indexOf('<');
+      // 如果是以标签开始
       if (textEnd === 0) {
-        // Comment:
+        // 判断是否是注释节点
         if (comment.test(html)) {
           var commentEnd = html.indexOf('-->');
 
@@ -3179,6 +3190,7 @@ function parseHTML (html, options) {
         }
 
         // http://en.wikipedia.org/wiki/Conditional_comment#Downlevel-revealed_conditional_comment
+        // 如果是条件注释
         if (conditionalComment.test(html)) {
           var conditionalEnd = html.indexOf(']>');
 
@@ -3188,14 +3200,14 @@ function parseHTML (html, options) {
           }
         }
 
-        // Doctype:
+        // 文件类型:
         var doctypeMatch = html.match(doctype);
         if (doctypeMatch) {
           advance(doctypeMatch[0].length);
           continue
         }
 
-        // End tag:
+        // 结束节点: 调取结束节点事件
         var endTagMatch = html.match(endTag);
         if (endTagMatch) {
           var curIndex = index;
@@ -3204,47 +3216,62 @@ function parseHTML (html, options) {
           continue
         }
 
-        // Start tag:
+        // 开始节点: 调取开始节点处理方法
         var startTagMatch = parseStartTag();
         if (startTagMatch) {
           handleStartTag(startTagMatch);
+          // 应该忽略第一条换行符
           if (shouldIgnoreFirstNewline(startTagMatch.tagName, html)) {
             advance(1);
           }
           continue
         }
       }
-
+    
+      /* 如果存在标签
+      * 1. 这里整体判断了一下，先将确定第一个<符号的位置
+      * 2. 判断此符号是否属于四种需要处理的类型
+      * 3. 如果不是，就是文本类型，循环查找下一个<字符的位置，知道文本结束，或者找到需要特殊处理的<
+      * 4. 使用text保存这段text节点文本，将html变量中的参数，切割保存到text中
+      * */
       var text = (void 0), rest = (void 0), next = (void 0);
       if (textEnd >= 0) {
+        // 直接忽略<之前的字符
         rest = html.slice(textEnd);
+        // 如果不属于那四个节点类型，则当作纯文本处理
         while (
           !endTag.test(rest) &&
           !startTagOpen.test(rest) &&
           !comment.test(rest) &&
           !conditionalComment.test(rest)
         ) {
-          // < in plain text, be forgiving and treat it as text
+          // 这里查找下一个<这个字符
           next = rest.indexOf('<', 1);
           if (next < 0) { break }
+          // 获取到下一个<字符
           textEnd += next;
+          // 将下一个字符前的字符串切割出去
           rest = html.slice(textEnd);
         }
+        // 一直到找到属于特殊处理的<的符号，将前面这一段text纯文本保存出来
         text = html.substring(0, textEnd);
       }
-
+      
+      // 如果不是标签，纯文本
       if (textEnd < 0) {
         text = html;
       }
-
+      
+      // 如果存在文本,就截取掉这段文本
       if (text) {
         advance(text.length);
       }
 
+      // 判断字符和是否有text文本存在，如果有，则将text传进该方法
       if (options.chars && text) {
         options.chars(text, index - text.length, index);
       }
-    } else {
+    } else { // 如果我们在脚本/样式之类的纯文本内容元素中
       var endTagLength = 0;
       var stackedTag = lastTag.toLowerCase();
       var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
@@ -3267,25 +3294,35 @@ function parseHTML (html, options) {
       html = rest$1;
       parseEndTag(stackedTag, index - endTagLength, index);
     }
-
+    // 如果html并没有被以上操作处理，就抛出错误，跳出循环
     if (html === last) {
       options.chars && options.chars(html);
-      if (!stack.length && options.warn) {
+      if ( !stack.length && options.warn) {
         options.warn(("Mal-formatted tag at end of template: \"" + html + "\""), { start: index + html.length });
       }
       break
     }
   }
 
-  // Clean up any remaining tags
+  // 清理剩余的标签
   parseEndTag();
 
+  // 剪切html的方法，对index进行重定位
   function advance (n) {
     index += n;
     html = html.substring(n);
   }
 
+  /**
+   *解析开始标签
+   * @return {tagName, attrs, start, end} 带有标签name,属性数字，开始位置的对象
+   * 解析过程：
+   * 1.先切割tag字段，存入tagName参数中,
+   * 2.然后通过 “(1)” = “(2)"的方式，匹配到键对值，push进属性数组中
+   * 3.记录该字段在模板重得开始和结束位置的下表并保存到start和end字段中
+   * */
   function parseStartTag () {
+    // 正则匹配开始标签 index 记录当前字符串切割位置
     var start = html.match(startTagOpen);
     if (start) {
       var match = {
@@ -3295,6 +3332,7 @@ function parseHTML (html, options) {
       };
       advance(start[0].length);
       var end, attr;
+      // 解析属性，解析一个，切掉一个，直到遇到开始的闭合标签 >  />
       while (!(end = html.match(startTagClose)) && (attr = html.match(dynamicArgAttribute) || html.match(attribute))) {
         attr.start = index;
         advance(attr[0].length);
@@ -3309,27 +3347,40 @@ function parseHTML (html, options) {
       }
     }
   }
-
+  
+  /**
+   * 处理开始标签
+   * @param match {tagName, attrs, start, end}
+   * 1.先判断是否是需要特殊处理的标签元素或记录当前标签是否是自调用标签
+   * 2.处理属性数组，遍历属性数组，将数组元素设置为{name,value}的格式
+   * 3.如果不是该标签是自调用标签，就需要特殊处理，将其压入栈中
+   * 4.调用start钩子函数
+   * */
   function handleStartTag (match) {
     var tagName = match.tagName;
     var unarySlash = match.unarySlash;
 
+    // todo 如果期待HTML
     if (expectHTML) {
       if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
         parseEndTag(lastTag);
       }
-      if (canBeLeftOpenTag$$1(tagName) && lastTag === tagName) {
+      if (canBeLeftOpenTag(tagName) && lastTag === tagName) {
         parseEndTag(tagName);
       }
     }
 
-    var unary = isUnaryTag$$1(tagName) || !!unarySlash;
+    // 判断是否是自闭合标签
+    var unary = isUnaryTag(tagName) || !!unarySlash;
 
+    // 处理属性数组
     var l = match.attrs.length;
     var attrs = new Array(l);
+    // 替换attrs里面得值，替换为{name, value}对象
     for (var i = 0; i < l; i++) {
       var args = match.attrs[i];
       var value = args[3] || args[4] || args[5] || '';
+      // 检查当前浏览器是否在属性值内部编码了char
       var shouldDecodeNewlines = tagName === 'a' && args[1] === 'href'
         ? options.shouldDecodeNewlinesForHref
         : options.shouldDecodeNewlines;
@@ -3337,28 +3388,42 @@ function parseHTML (html, options) {
         name: args[1],
         value: decodeAttr(value, shouldDecodeNewlines)
       };
-      if (options.outputSourceRange) {
+      // 将开始得位置从当前位置提前到去除空格后得位置
+      if ( options.outputSourceRange) {
         attrs[i].start = args.start + args[0].match(/^\s*/).length;
         attrs[i].end = args.end;
       }
     }
 
+    // 如果不是自闭合标签，就将这个标签压入栈中
     if (!unary) {
       stack.push({ tag: tagName, lowerCasedTag: tagName.toLowerCase(), attrs: attrs, start: match.start, end: match.end });
       lastTag = tagName;
     }
 
+    // 如果有start处理得方法，那就调用start处理方法
     if (options.start) {
       options.start(tagName, attrs, unary, match.start, match.end);
     }
   }
 
+  /**
+   * 解析结束标签
+   * @param tagName 标签名
+   * @param start 开始位置
+   * @param end 结束位置
+   * 1.先查找相近的同名闭合标签，并记录其在栈中的位置
+   * 2.从栈顶开始弹出栈顶的元素，直到记录的位置，如果有多余元素，就抛出警告，并继续运行其end钩子函数
+   * 3.处理完多余函数之后，重设当前栈顶元素名称，lastTag
+   * 4.特殊处理<br>和<p>标签
+   * */
   function parseEndTag (tagName, start, end) {
+    // pos记录当前栈内该tagName的开始标签位置
     var pos, lowerCasedTagName;
     if (start == null) { start = index; }
     if (end == null) { end = index; }
 
-    // Find the closest opened tag of the same type
+    // 查找最接近的相同类型的打开的标签
     if (tagName) {
       lowerCasedTagName = tagName.toLowerCase();
       for (pos = stack.length - 1; pos >= 0; pos--) {
@@ -3367,14 +3432,17 @@ function parseHTML (html, options) {
         }
       }
     } else {
-      // If no tag name is provided, clean shop
+      // 如果没有提供标签名称，请清洁商店
       pos = 0;
     }
 
+    // 如果在栈中找到了闭合标签
     if (pos >= 0) {
-      // Close all the open elements, up the stack
+      // 关闭所有打开的元素，抛出栈
       for (var i = stack.length - 1; i >= pos; i--) {
-        if (i > pos || !tagName &&
+        // 处理未闭合的标签，注意，这里只是抛出警告
+        if (
+          (i > pos || !tagName) &&
           options.warn
         ) {
           options.warn(
@@ -3382,18 +3450,21 @@ function parseHTML (html, options) {
             { start: stack[i].start, end: stack[i].end }
           );
         }
+        // 调用当前弹出栈的元素的end方法
         if (options.end) {
           options.end(stack[i].tag, start, end);
         }
       }
 
-      // Remove the open elements from the stack
+      // 从堆栈中删除打开的元素，并重设栈顶元素名称
       stack.length = pos;
       lastTag = pos && stack[pos - 1].tag;
+      //处理换行标签
     } else if (lowerCasedTagName === 'br') {
       if (options.start) {
         options.start(tagName, [], true, start, end);
       }
+      // 处理P标签
     } else if (lowerCasedTagName === 'p') {
       if (options.start) {
         options.start(tagName, [], false, start, end);
@@ -3556,7 +3627,7 @@ function parseString (chr) {
 /*  */
 
 var onRE = /^@|^v-on:/;
-var dirRE = /^v-|^@|^:/;
+var dirRE =  /^v-|^@|^:|^#/;
 var forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/;
 var forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
 var stripParensRE = /^\(|\)$/g;
@@ -3605,7 +3676,8 @@ function createASTElement (
 }
 
 /**
- * Convert HTML string to AST.
+ * 将字符串模板创建成抽象语法树
+ * @return root : vnode对象
  */
 function parse (
   template,
@@ -3625,12 +3697,15 @@ function parse (
 
   delimiters = options.delimiters;
 
+  // 维护的栈，与浏览器解析html文件的原理一样
   var stack = [];
   var preserveWhitespace = options.preserveWhitespace !== false;
   var whitespaceOption = options.whitespace;
   var root;
+  // 栈顶的元素，必是下一个元素的父元素
   var currentParent;
   var inVPre = false;
+  // 是否需要调过处理 v-pre
   var inPre = false;
   var warned = false;
 
@@ -3640,7 +3715,7 @@ function parse (
       warn$1(msg, range);
     }
   }
-
+  // todo 处理关于slot及其命名空间等
   function closeElement (element) {
     trimEndingWhitespace(element);
     if (!inVPre && !element.processed) {
@@ -3731,7 +3806,13 @@ function parse (
       );
     }
   }
-
+  /**
+   *解析模板
+   * @param start: tag开始标签调用的方法
+   * @param end: tag结束标签调用的方法
+   * @param chars: 文本解析调用的方法
+   * @param comment: 注释解析调用的方法
+   * */
   parseHTML(template, {
     warn: warn$1,
     expectHTML: options.expectHTML,
@@ -3741,9 +3822,10 @@ function parse (
     shouldDecodeNewlinesForHref: options.shouldDecodeNewlinesForHref,
     shouldKeepComment: options.comments,
     outputSourceRange: options.outputSourceRange,
+    // 将标签转换成vnode对象后压入栈中
     start: function start (tag, attrs, unary, start$1, end) {
-      // check namespace.
-      // inherit parent ns if there is one
+      //检查名称空间。
+      //如果有一个，则继承父ns name space 命名空间
       var ns = (currentParent && currentParent.ns) || platformGetTagNamespace(tag);
 
       // handle IE svg bug
@@ -3782,7 +3864,7 @@ function parse (
 
       if (isForbiddenTag(element) && !isServerRendering()) {
         element.forbidden = true;
-        warn$1(
+         warn$1(
           'Templates should only be responsible for mapping the state to the ' +
           'UI. Avoid placing tags with side-effects in your templates, such as ' +
           "<" + tag + ">" + ', as they will not be parsed.',
@@ -3790,11 +3872,11 @@ function parse (
         );
       }
 
-      // apply pre-transforms
+      // 应用预转换
       for (var i = 0; i < preTransforms.length; i++) {
         element = preTransforms[i](element, options) || element;
       }
-
+      // 先检查是否有v-pre属性，如果有，就标记为静态根节点
       if (!inVPre) {
         processPre(element);
         if (element.pre) {
@@ -3820,6 +3902,8 @@ function parse (
         }
       }
 
+      // 如果不是自闭和标签，就添加入栈
+      // 如果是，就调用闭合方法
       if (!unary) {
         currentParent = element;
         stack.push(element);
@@ -3827,19 +3911,26 @@ function parse (
         closeElement(element);
       }
     },
-
+    // 从栈顶弹出一个元素，并调用闭合element方法
     end: function end (tag, start, end$1) {
+      // 从栈中弹出最上的一个元素
       var element = stack[stack.length - 1];
       // pop stack
       stack.length -= 1;
       currentParent = stack[stack.length - 1];
-      if (options.outputSourceRange) {
+      if ( options.outputSourceRange) {
         element.end = end$1;
       }
       closeElement(element);
     },
 
+    /*
+    * 处理字符串
+    * 1、先去除换行符等无关因素
+    * 2、对文本内容进行变量判断，如果有变量，则调用parseText方法进行解析，如果没有，则直接插入父元素
+    * */
     chars: function chars (text, start, end) {
+      // currentParent 现任父元素是否存在
       if (!currentParent) {
         {
           if (text === template) {
@@ -3865,7 +3956,9 @@ function parse (
         return
       }
       var children = currentParent.children;
+      // trim去掉两端空格, 先预处理一下text，去掉不重要的文本
       if (inPre || text.trim()) {
+        // 父标签是否是script或者style这种文本标签
         text = isTextTag(currentParent) ? text : decodeHTMLCached(text);
       } else if (!children.length) {
         // remove the whitespace-only node right after an opening tag
@@ -3881,13 +3974,15 @@ function parse (
       } else {
         text = preserveWhitespace ? ' ' : '';
       }
+      // 实际处理过程
       if (text) {
         if (!inPre && whitespaceOption === 'condense') {
-          // condense consecutive whitespaces into single space
+          // 将连续的空格压缩为单个空间
           text = text.replace(whitespaceRE, ' ');
         }
         var res;
         var child;
+        // 如果是带变量的文本
         if (!inVPre && text !== ' ' && (res = parseText(text, delimiters))) {
           child = {
             type: 2,
@@ -3895,14 +3990,16 @@ function parse (
             tokens: res.tokens,
             text: text
           };
+        // 纯文本的处理办法
         } else if (text !== ' ' || !children.length || children[children.length - 1].text !== ' ') {
           child = {
             type: 3,
             text: text
           };
         }
+        // 如果子元素存在，就将此节点添加到该节点
         if (child) {
-          if (options.outputSourceRange) {
+          if ( options.outputSourceRange) {
             child.start = start;
             child.end = end;
           }
@@ -3910,6 +4007,7 @@ function parse (
         }
       }
     },
+    // todo...
     comment: function comment (text, start, end) {
       // adding anyting as a sibling to the root node is forbidden
       // comments should still be allowed, but ignored
@@ -3919,7 +4017,7 @@ function parse (
           text: text,
           isComment: true
         };
-        if (options.outputSourceRange) {
+        if ( options.outputSourceRange) {
           child.start = start;
           child.end = end;
         }
@@ -4094,7 +4192,7 @@ function findPrevElement (children) {
     if (children[i].type === 1) {
       return children[i]
     } else {
-      if (children[i].text !== ' ') {
+      if ( children[i].text !== ' ') {
         warn$1(
           "text \"" + (children[i].text.trim()) + "\" between v-if and v-else(-if) " +
           "will be ignored.",
@@ -4114,8 +4212,8 @@ function addIfCondition (el, condition) {
 }
 
 function processOnce (el) {
-  var once$$1 = getAndRemoveAttr(el, 'v-once');
-  if (once$$1 != null) {
+  var once = getAndRemoveAttr(el, 'v-once');
+  if (once != null) {
     el.once = true;
   }
 }
@@ -4127,7 +4225,7 @@ function processSlotContent (el) {
   if (el.tag === 'template') {
     slotScope = getAndRemoveAttr(el, 'scope');
     /* istanbul ignore if */
-    if (slotScope) {
+    if ( slotScope) {
       warn$1(
         "the \"scope\" attribute for scoped slots have been deprecated and " +
         "replaced by \"slot-scope\" since 2.5. The new \"slot-scope\" attribute " +
@@ -4140,7 +4238,7 @@ function processSlotContent (el) {
     el.slotScope = slotScope || getAndRemoveAttr(el, 'slot-scope');
   } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
     /* istanbul ignore if */
-    if (el.attrsMap['v-for']) {
+    if ( el.attrsMap['v-for']) {
       warn$1(
         "Ambiguous combined usage of slot-scope and v-for on <" + (el.tag) + "> " +
         "(v-for takes higher priority). Use a wrapper <template> for the " +
@@ -4264,7 +4362,7 @@ function getSlotName (binding) {
 function processSlotOutlet (el) {
   if (el.tag === 'slot') {
     el.slotName = getBindingAttr(el, 'name');
-    if (el.key) {
+    if ( el.key) {
       warn$1(
         "`key` does not work on <slot> because slots are abstract outlets " +
         "and can possibly expand into multiple elements. " +
@@ -4308,6 +4406,7 @@ function processAttrs (el) {
           name = name.slice(1, -1);
         }
         if (
+          
           value.trim().length === 0
         ) {
           warn$1(
@@ -4388,7 +4487,7 @@ function processAttrs (el) {
           }
         }
         addDirective(el, name, rawName, value, arg, isDynamic, modifiers, list[i]);
-        if (name === 'model') {
+        if ( name === 'model') {
           checkForAliasModel(el, value);
         }
       }
@@ -4442,6 +4541,7 @@ function makeAttrsMap (attrs) {
   var map = {};
   for (var i = 0, l = attrs.length; i < l; i++) {
     if (
+      
       map[attrs[i].name] && !isIE && !isEdge
     ) {
       warn$1('duplicate attribute: ' + attrs[i].name, attrs[i]);
@@ -4620,10 +4720,18 @@ function model$2 (
     genRadioModel(el, value, modifiers);
   } else if (tag === 'input' || tag === 'textarea') {
     genDefaultModel(el, value, modifiers);
-  } else {
+  } else if (!config.isReservedTag(tag)) {
     genComponentModel(el, value, modifiers);
     // component v-model doesn't need extra runtime
     return false
+  } else {
+    warn$2(
+      "<" + (el.tag) + " v-model=\"" + value + "\">: " +
+      "v-model is not supported on this element type. " +
+      'If you are working with contenteditable, it\'s recommended to ' +
+      'wrap a library dedicated for that purpose inside a custom component.',
+      el.rawAttrsMap['v-model']
+    );
   }
 
   // ensure runtime directive metadata
@@ -4782,7 +4890,7 @@ var baseOptions = {
 
 /*  */
 
-var fnExpRE = /^([\w$_]+|\([^)]*?\))\s*=>|^function\s*(?:[\w$]+)?\s*\(/;
+var fnExpRE = /^([\w$_]+|\([^)]*?\))\s*=>|^function(?:\s+[\w$]+)?\s*\(/;
 var fnInvokeRE = /\([^)]*?\);*$/;
 var simplePathRE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['[^']*?']|\["[^"]*?"]|\[\d+]|\[[A-Za-z_$][\w$]*])*$/;
 
@@ -4946,7 +5054,7 @@ function genFilterCode (key) {
 /*  */
 
 function on (el, dir) {
-  if (dir.modifiers) {
+  if ( dir.modifiers) {
     warn("v-on without argument does not support modifiers.");
   }
   el.wrapListeners = function (code) { return ("_g(" + code + "," + (dir.value) + ")"); };
@@ -4954,7 +5062,7 @@ function on (el, dir) {
 
 /*  */
 
-function bind$1 (el, dir) {
+function bind (el, dir) {
   el.wrapData = function (code) {
     return ("_b(" + code + ",'" + (el.tag) + "'," + (dir.value) + "," + (dir.modifiers && dir.modifiers.prop ? 'true' : 'false') + (dir.modifiers && dir.modifiers.sync ? ',true' : '') + ")")
   };
@@ -4964,7 +5072,7 @@ function bind$1 (el, dir) {
 
 var baseDirectives$1 = {
   on: on,
-  bind: bind$1,
+  bind: bind,
   cloak: noop
 };
 
@@ -5071,7 +5179,7 @@ function genOnce (el, state) {
       parent = parent.parent;
     }
     if (!key) {
-      state.warn(
+       state.warn(
         "v-once can only be used inside v-for that is keyed. ",
         el.rawAttrsMap['v-once']
       );
@@ -5131,7 +5239,8 @@ function genFor (
   var iterator1 = el.iterator1 ? ("," + (el.iterator1)) : '';
   var iterator2 = el.iterator2 ? ("," + (el.iterator2)) : '';
 
-  if (state.maybeComponent(el) &&
+  if (
+    state.maybeComponent(el) &&
     el.tag !== 'slot' &&
     el.tag !== 'template' &&
     !el.key
@@ -5263,7 +5372,9 @@ function genDirectives (el, state) {
 
 function genInlineTemplate (el, state) {
   var ast = el.children[0];
-  if (el.children.length !== 1 || ast.type !== 1) {
+  if ( (
+    el.children.length !== 1 || ast.type !== 1
+  )) {
     state.warn(
       'Inline-template components must have exactly one child element.',
       { start: el.start }
@@ -5465,15 +5576,15 @@ function genSlot (el, state) {
         dynamic: attr.dynamic
       }); }))
     : null;
-  var bind$$1 = el.attrsMap['v-bind'];
-  if ((attrs || bind$$1) && !children) {
+  var bind = el.attrsMap['v-bind'];
+  if ((attrs || bind) && !children) {
     res += ",null";
   }
   if (attrs) {
     res += "," + attrs;
   }
-  if (bind$$1) {
-    res += (attrs ? '' : ',null') + "," + bind$$1;
+  if (bind) {
+    res += (attrs ? '' : ',null') + "," + bind;
   }
   return res + ')'
 }
@@ -5493,7 +5604,7 @@ function genProps (props) {
   var dynamicProps = "";
   for (var i = 0; i < props.length; i++) {
     var prop = props[i];
-    var value = transformSpecialNewlines(prop.value);
+    var value =  transformSpecialNewlines(prop.value);
     if (prop.dynamic) {
       dynamicProps += (prop.name) + "," + value + ",";
     } else {
@@ -6022,6 +6133,8 @@ function checkNode (node, warn) {
           var range = node.rawAttrsMap[name];
           if (name === 'v-for') {
             checkFor(node, ("v-for=\"" + value + "\""), warn, range);
+          } else if (name === 'v-slot' || name[0] === '#') {
+            checkFunctionParameterExpression(value, (name + "=\"" + value + "\""), warn, range);
           } else if (onRE.test(name)) {
             checkEvent(value, (name + "=\"" + value + "\""), warn, range);
           } else {
@@ -6041,9 +6154,9 @@ function checkNode (node, warn) {
 }
 
 function checkEvent (exp, text, warn, range) {
-  var stipped = exp.replace(stripStringRE, '');
-  var keywordMatch = stipped.match(unaryOperatorsRE);
-  if (keywordMatch && stipped.charAt(keywordMatch.index - 1) !== '$') {
+  var stripped = exp.replace(stripStringRE, '');
+  var keywordMatch = stripped.match(unaryOperatorsRE);
+  if (keywordMatch && stripped.charAt(keywordMatch.index - 1) !== '$') {
     warn(
       "avoid using JavaScript unary operator as property name: " +
       "\"" + (keywordMatch[0]) + "\" in expression " + (text.trim()),
@@ -6095,6 +6208,19 @@ function checkExpression (exp, text, warn, range) {
         range
       );
     }
+  }
+}
+
+function checkFunctionParameterExpression (exp, text, warn, range) {
+  try {
+    new Function(exp, '');
+  } catch (e) {
+    warn(
+      "invalid function parameter expression: " + (e.message) + " in\n\n" +
+      "    " + exp + "\n\n" +
+      "  Raw expression: " + (text.trim()) + "\n",
+      range
+    );
   }
 }
 
@@ -6174,7 +6300,7 @@ function createCompileToFunctionFn (compile) {
     vm
   ) {
     options = extend({}, options);
-    var warn$$1 = options.warn || warn;
+    var warn$1 = options.warn || warn;
     delete options.warn;
 
     /* istanbul ignore if */
@@ -6184,7 +6310,7 @@ function createCompileToFunctionFn (compile) {
         new Function('return 1');
       } catch (e) {
         if (e.toString().match(/unsafe-eval|CSP/)) {
-          warn$$1(
+          warn$1(
             'It seems you are using the standalone build of Vue.js in an ' +
             'environment with Content Security Policy that prohibits unsafe-eval. ' +
             'The template compiler cannot work in this environment. Consider ' +
@@ -6211,14 +6337,14 @@ function createCompileToFunctionFn (compile) {
       if (compiled.errors && compiled.errors.length) {
         if (options.outputSourceRange) {
           compiled.errors.forEach(function (e) {
-            warn$$1(
+            warn$1(
               "Error compiling template:\n\n" + (e.msg) + "\n\n" +
               generateCodeFrame(template, e.start, e.end),
               vm
             );
           });
         } else {
-          warn$$1(
+          warn$1(
             "Error compiling template:\n\n" + template + "\n\n" +
             compiled.errors.map(function (e) { return ("- " + e); }).join('\n') + '\n',
             vm
@@ -6248,7 +6374,7 @@ function createCompileToFunctionFn (compile) {
     /* istanbul ignore if */
     {
       if ((!compiled.errors || !compiled.errors.length) && fnGenErrors.length) {
-        warn$$1(
+        warn$1(
           "Failed to generate render function:\n\n" +
           fnGenErrors.map(function (ref) {
             var err = ref.err;
@@ -6282,7 +6408,7 @@ function createCompilerCreator (baseCompile) {
       };
 
       if (options) {
-        if (options.outputSourceRange) {
+        if ( options.outputSourceRange) {
           // $flow-disable-line
           var leadingSpaceLength = template.match(/^\s*/)[0].length;
 
@@ -6356,7 +6482,6 @@ var createCompiler = createCompilerCreator(function baseCompile (
 /*  */
 
 var ref = createCompiler(baseOptions);
-var compile = ref.compile;
 var compileToFunctions = ref.compileToFunctions;
 
 /*  */
@@ -6652,13 +6777,13 @@ function _traverse (val, seen) {
 var normalizeEvent = cached(function (name) {
   var passive = name.charAt(0) === '&';
   name = passive ? name.slice(1) : name;
-  var once$$1 = name.charAt(0) === '~'; // Prefixed last, checked first
-  name = once$$1 ? name.slice(1) : name;
+  var once = name.charAt(0) === '~'; // Prefixed last, checked first
+  name = once ? name.slice(1) : name;
   var capture = name.charAt(0) === '!';
   name = capture ? name.slice(1) : name;
   return {
     name: name,
-    once: once$$1,
+    once: once,
     capture: capture,
     passive: passive
   }
@@ -6687,17 +6812,17 @@ function updateListeners (
   on,
   oldOn,
   add,
-  remove$$1,
+  remove,
   createOnceHandler,
   vm
 ) {
-  var name, def$$1, cur, old, event;
+  var name, def, cur, old, event;
   for (name in on) {
-    def$$1 = cur = on[name];
+    def = cur = on[name];
     old = oldOn[name];
     event = normalizeEvent(name);
     if (isUndef(cur)) {
-      warn(
+       warn(
         "Invalid handler for event \"" + (event.name) + "\": got " + String(cur),
         vm
       );
@@ -6717,12 +6842,10 @@ function updateListeners (
   for (name in oldOn) {
     if (isUndef(on[name])) {
       event = normalizeEvent(name);
-      remove$$1(event.name, oldOn[name], event.capture);
+      remove(event.name, oldOn[name], event.capture);
     }
   }
 }
-
-/*  */
 
 /*  */
 
@@ -6826,7 +6949,7 @@ function _createElement (
   normalizationType
 ) {
   if (isDef(data) && isDef((data).__ob__)) {
-    warn(
+     warn(
       "Avoid using observed data object as vnode data: " + (JSON.stringify(data)) + "\n" +
       'Always create fresh vnode data objects in each render!',
       context
@@ -6842,7 +6965,8 @@ function _createElement (
     return createEmptyVNode()
   }
   // warn against non-primitive key
-  if (isDef(data) && isDef(data.key) && !isPrimitive(data.key)
+  if (
+    isDef(data) && isDef(data.key) && !isPrimitive(data.key)
   ) {
     {
       warn(
@@ -6869,7 +6993,19 @@ function _createElement (
   if (typeof tag === 'string') {
     var Ctor;
     ns = (context.$vnode && context.$vnode.ns) || config.getTagNamespace(tag);
-    if ((!data || !data.pre) && isDef(Ctor = resolveAsset(context.$options, 'components', tag))) {
+    if (config.isReservedTag(tag)) {
+      // platform built-in elements
+      if ( isDef(data) && isDef(data.nativeOn)) {
+        warn(
+          ("The .native modifier for v-on is only valid on components but it was used on <" + tag + ">."),
+          context
+        );
+      }
+      vnode = new VNode(
+        config.parsePlatformTagName(tag), data, children,
+        undefined, undefined, context
+      );
+    } else if ((!data || !data.pre) && isDef(Ctor = resolveAsset(context.$options, 'components', tag))) {
       // component
       vnode = createComponent(Ctor, data, context, children, tag);
     } else {
@@ -6987,7 +7123,7 @@ function renderSlot (
   if (scopedSlotFn) { // scoped slot
     props = props || {};
     if (bindObject) {
-      if (!isObject(bindObject)) {
+      if ( !isObject(bindObject)) {
         warn(
           'slot v-bind without argument expects an Object',
           this
@@ -7063,7 +7199,7 @@ function bindObjectProps (
 ) {
   if (value) {
     if (!isObject(value)) {
-      warn(
+       warn(
         'v-bind without argument expects an Object or Array value',
         this
       );
@@ -7171,7 +7307,7 @@ function markStaticNode (node, key, isOnce) {
 function bindObjectListeners (data, value) {
   if (value) {
     if (!isPlainObject(value)) {
-      warn(
+       warn(
         'v-on without argument expects an Object value',
         this
       );
@@ -7222,8 +7358,8 @@ function bindDynamicKeys (baseObj, values) {
     var key = values[i];
     if (typeof key === 'string' && key) {
       baseObj[values[i]] = values[i + 1];
-    } else if (key !== '' && key !== null) {
-      // null is a speical value for explicitly removing a binding
+    } else if ( key !== '' && key !== null) {
+      // null is a special value for explicitly removing a binding
       warn(
         ("Invalid value for dynamic directive argument (expected string or null): " + key),
         this
@@ -7486,7 +7622,7 @@ function resolveAsyncComponent (
     });
 
     var reject = once(function (reason) {
-      warn(
+       warn(
         "Failed to resolve async component: " + (String(factory)) +
         (reason ? ("\nReason: " + reason) : '')
       );
@@ -7531,7 +7667,8 @@ function resolveAsyncComponent (
             timerTimeout = null;
             if (isUndef(factory.resolved)) {
               reject(
-                "timeout (" + (res.timeout) + "ms)"
+                 ("timeout (" + (res.timeout) + "ms)")
+                  
               );
             }
           }, res.timeout);
@@ -7546,12 +7683,6 @@ function resolveAsyncComponent (
       : factory.resolved
   }
 }
-
-/*  */
-
-/*  */
-
-/*  */
 
 /*  */
 
@@ -7754,10 +7885,6 @@ function queueActivatedComponent (vm) {
   // rely on checking whether it's in an inactive tree (e.g. router-view)
   vm._inactive = false;
 }
-
-/*  */
-
-/*  */
 
 /*  */
 
@@ -7976,12 +8103,6 @@ function mergeProps (to, from) {
     to[camelize(key)] = from[key];
   }
 }
-
-/*  */
-
-/*  */
-
-/*  */
 
 /*  */
 
@@ -8748,7 +8869,7 @@ var TemplateStream = /*@__PURE__*/(function (Transform) {
 
 /*  */
 
-var compile$1 = require('lodash.template');
+var compile = require('lodash.template');
 var compileOptions = {
   escape: /{{([^{][\s\S]+?[^}])}}/g,
   interpolate: /{{{([\s\S]+?)}}}/g
@@ -8781,9 +8902,9 @@ function parseTemplate (
   }
 
   return {
-    head: compile$1(template.slice(0, i), compileOptions),
-    neck: compile$1(template.slice(i, j), compileOptions),
-    tail: compile$1(template.slice(j + contentPlaceholder.length), compileOptions)
+    head: compile(template.slice(0, i), compileOptions),
+    neck: compile(template.slice(i, j), compileOptions),
+    tail: compile(template.slice(j + contentPlaceholder.length), compileOptions)
   }
 }
 
@@ -9031,7 +9152,7 @@ TemplateRenderer.prototype.renderState = function renderState (context, options)
     var contextKey = ref.contextKey; if ( contextKey === void 0 ) contextKey = 'state';
     var windowKey = ref.windowKey; if ( windowKey === void 0 ) windowKey = '__INITIAL_STATE__';
   var state = this.serialize(context[contextKey]);
-  var autoRemove = '';
+  var autoRemove =  '';
   var nonceAttr = context.nonce ? (" nonce=\"" + (context.nonce) + "\"") : '';
   return context[contextKey]
     ? ("<script" + nonceAttr + ">window." + windowKey + "=" + state + autoRemove + "</script>")
@@ -9598,5 +9719,5 @@ function createRenderer$1 (options) {
 
 var createBundleRenderer = createBundleRendererCreator(createRenderer$1);
 
-exports.createRenderer = createRenderer$1;
 exports.createBundleRenderer = createBundleRenderer;
+exports.createRenderer = createRenderer$1;

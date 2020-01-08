@@ -41,7 +41,14 @@ export default class Watcher {
   before: ?Function;
   getter: Function;
   value: any;
-
+  
+  /**
+   * @param vm
+   * @param expOrFn
+   * @param cb 如果是渲染时实例化,cb = core/instance/lifecycle/mountComponent中的updateComponent方法
+   * @param options
+   * @param isRenderWatcher
+   */
   constructor (
     vm: Component,
     expOrFn: string | Function,

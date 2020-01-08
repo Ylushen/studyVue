@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script src="vue.js"></script>
+</head>
+<body>
+<div id="app">
+  {{aaa}}
+</div>
+<script type="text/javascript">
+  Vue.use({aaA:'123'})
+  let aaa = new Vue({
+    el: '#app',
+    data: {
+      aaa: '1231231123123'
+    },
+    methods: {
+      bbb() {
+        return 'bbb'
+      }
+    },
+    beforeUpdate() {
+      console.log('beforeUpdate')
+    }
+  })
+</script>
+</body>
+</html>

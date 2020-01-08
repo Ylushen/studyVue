@@ -23,8 +23,8 @@ import {
 const SIMPLE_NORMALIZE = 1
 const ALWAYS_NORMALIZE = 2
 
-// wrapper function for providing a more flexible interface
-// without getting yelled at by flow
+// 包装函数，用于提供更灵活的界面
+// 不会被流程影响太多
 export function createElement (
   context: Component,
   tag: any,

@@ -19,8 +19,8 @@ import {
 const arrayKeys = Object.getOwnPropertyNames(arrayMethods)
 
 /**
- * In some cases we may want to disable observation inside a component's
- * update computation.
+ * 在某些情况下，我们可能希望禁用组件内部的观察
+ * 更新计算。
  */
 export let shouldObserve: boolean = true
 
@@ -29,10 +29,10 @@ export function toggleObserving (value: boolean) {
 }
 
 /**
- * Observer class that is attached to each observed
- * object. Once attached, the observer converts the target
- * object's property keys into getter/setters that
- * collect dependencies and dispatch updates.
+ * 附加到每个观察者的观察者类
+ * 宾语。 附加后，观察者将转换目标
+ * 对象的属性键进入getter / setter
+ * 收集依赖关系并调度更新。
  */
 export class Observer {
   value: any;
@@ -103,9 +103,10 @@ function copyAugment (target: Object, src: Object, keys: Array<string>) {
 }
 
 /**
- * Attempt to create an observer instance for a value,
- * returns the new observer if successfully observed,
- * or the existing observer if the value already has one.
+ * 尝试为值创建观察者实例，
+ * 如果成功观察到，则返回新观察者，
+ * 或现有的观察者（如果值已包含一个）。
+ * 该处详细实现方式，参考ylsTest目录下的Vue_Ob_Watch_Dep文件
  */
 export function observe (value: any, asRootData: ?boolean): Observer | void {
   if (!isObject(value) || value instanceof VNode) {
@@ -130,7 +131,7 @@ export function observe (value: any, asRootData: ?boolean): Observer | void {
 }
 
 /**
- * Define a reactive property on an Object.
+ * 在对象上定义反应性属性。
  */
 export function defineReactive (
   obj: Object,
@@ -141,12 +142,13 @@ export function defineReactive (
 ) {
   const dep = new Dep()
 
+  // 获取自己的属性描述符 getOwnPropertyDescriptor
   const property = Object.getOwnPropertyDescriptor(obj, key)
   if (property && property.configurable === false) {
     return
   }
 
-  // cater for pre-defined getter/setters
+  // 迎合预定义的get/set方法
   const getter = property && property.get
   const setter = property && property.set
   if ((!getter || setter) && arguments.length === 2) {

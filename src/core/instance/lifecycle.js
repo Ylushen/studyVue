@@ -29,10 +29,18 @@ export function setActiveInstance(vm: Component) {
   }
 }
 
+/**
+ * @author yls
+ * @param vm
+ * $parent 父实例
+ * $root 当前实例节点是否为根节点
+ * $children 子实例数组
+ * $refs 一个对象，持有注册过 ref 特性 的所有 DOM 元素和组件实例。（官网说明）
+ */
 export function initLifecycle (vm: Component) {
   const options = vm.$options
 
-  // locate first non-abstract parent
+  // 找到第一位非抽象父母
   let parent = options.parent
   if (parent && !options.abstract) {
     while (parent.$options.abstract && parent.$parent) {
@@ -49,30 +57,47 @@ export function initLifecycle (vm: Component) {
 
   vm._watcher = null
   vm._inactive = null
+  // 生命周期标识
   vm._directInactive = false
   vm._isMounted = false
   vm._isDestroyed = false
   vm._isBeingDestroyed = false
 }
 
+/**
+ * @author yls
+ * @param Vue
+ * 挂载$forceUpdate， $destroy等直接对操作Vue render的方法
+ * _update方法，数据层与视图层的接口方法 todo 关键
+ */
 export function lifecycleMixin (Vue: Class<Component>) {
+  /**
+   * @author yls
+   * @param vnode
+   * @param hydrating
+   * @private
+   * todo 可能是直接同过传入新的vnode虚拟dom进行重新渲染
+   * vm._watcher.update() 可以强制刷新页面
+   */
   Vue.prototype._update = function (vnode: VNode, hydrating?: boolean) {
     const vm: Component = this
     const prevEl = vm.$el
     const prevVnode = vm._vnode
     const restoreActiveInstance = setActiveInstance(vm)
     vm._vnode = vnode
-    // Vue.prototype.__patch__ is injected in entry points
-    // based on the rendering backend used.
+    // 将Vue.prototype .__ patch__注入入口点
+    // 根据使用的渲染后端。
     if (!prevVnode) {
       // initial render
+      // __patch__方法，数据层与视图层的接口
+      // 地址 core/vdom/patch/createPatchFunction方法return的patch方法
       vm.$el = vm.__patch__(vm.$el, vnode, hydrating, false /* removeOnly */)
     } else {
       // updates
       vm.$el = vm.__patch__(prevVnode, vnode)
     }
     restoreActiveInstance()
-    // update __vue__ reference
+    // 更新__vue__参考
     if (prevEl) {
       prevEl.__vue__ = null
     }
@@ -83,17 +108,18 @@ export function lifecycleMixin (Vue: Class<Component>) {
     if (vm.$vnode && vm.$parent && vm.$vnode === vm.$parent._vnode) {
       vm.$parent.$el = vm.$el
     }
-    // updated hook is called by the scheduler to ensure that children are
-    // updated in a parent's updated hook.
+    // 调度程序将调用更新的钩子，以确保子进程处于
+    // 在父母的更新钩子中更新。
   }
 
+  // 迫使 Vue 实例重新渲染。注意它仅仅影响实例本身和插入插槽内容的子组件，而不是所有子组件。
   Vue.prototype.$forceUpdate = function () {
     const vm: Component = this
     if (vm._watcher) {
       vm._watcher.update()
     }
   }
-
+  // 完全销毁一个实例。清理它与其它实例的连接，解绑它的全部指令及事件监听器。
   Vue.prototype.$destroy = function () {
     const vm: Component = this
     if (vm._isBeingDestroyed) {
@@ -138,13 +164,30 @@ export function lifecycleMixin (Vue: Class<Component>) {
   }
 }
 
+/**
+ * @author yls
+ * @param vm
+ * @param el
+ * @param hydrating
+ * @return {Component}
+ * 挂载方法
+ * 1. 先获取render函数，vue中分两种$mount,runtime版本不带解析template方法，适用于vue-cli的项目
+ *    vue.min与vue版本一起打包了template方法，两版本的$mount方法不同，全部打包版本先适用了compiler方法进行了处理，生成了render函数
+ *    再执行runtime版本的mount.call函数，所以到当前方法，vm.$options上必定带了render方法
+ * 2. 获取到了render方法后，调用new Watcher, 在watcher类的构造方法中的get方法，会调用传入的updateComponent方法，
+ *    updateComponent中调用 vm._update, _update(render(),vm)的方式，将render返回的vnode传入_update方法中
+ * runtime时的模版解析方法在 entry-runtime-with-compiler.js 文件中
+ */
 export function mountComponent (
   vm: Component,
   el: ?Element,
   hydrating?: boolean
 ): Component {
   vm.$el = el
+  // render方法执行的字符串代码模板： with(this){return _c('div',{attrs:{"id":"app"}},[_v("\n  "+_s(aaa)+"\n")])}
+  // 先获取当前配置项上的render函数，如果没有，报错，告诉用户需要手动传入render函数
   if (!vm.$options.render) {
+    // 先给一个空的vnode虚拟dom，然后报错，告诉用户，需要引入带compiler的版本，或者需要传入render方法
     vm.$options.render = createEmptyVNode
     if (process.env.NODE_ENV !== 'production') {
       /* istanbul ignore if */
@@ -164,10 +207,12 @@ export function mountComponent (
       }
     }
   }
+  // 调用beforeMount生命周期函数
   callHook(vm, 'beforeMount')
 
   let updateComponent
   /* istanbul ignore if */
+  // performance 性能或行为 todo 好像是判断当前实力是否需要进行动态渲染
   if (process.env.NODE_ENV !== 'production' && config.performance && mark) {
     updateComponent = () => {
       const name = vm._name
@@ -191,9 +236,13 @@ export function mountComponent (
     }
   }
 
-  // we set this to vm._watcher inside the watcher's constructor
-  // since the watcher's initial patch may call $forceUpdate (e.g. inside child
-  // component's mounted hook), which relies on vm._watcher being already defined
+  // 我们在观察者的构造函数中将其设置为vm._watcher
+  // 因为观察者的初始补丁可能会调用$forceUpdate（例如，在child内部组件的挂接钩）
+  // 它依赖于已定义的vm._watcher
+  /**
+   * @author yls
+   * 初始渲染dom跟销毁时对dom的操作，都不会调用
+   */
   new Watcher(vm, updateComponent, noop, {
     before () {
       if (vm._isMounted && !vm._isDestroyed) {
@@ -203,8 +252,8 @@ export function mountComponent (
   }, true /* isRenderWatcher */)
   hydrating = false
 
-  // manually mounted instance, call mounted on self
-  // mounted is called for render-created child components in its inserted hook
+  // 手动安装的实例，自身安装的调用
+  // 在其插入的钩子中调用了render创建的子组件
   if (vm.$vnode == null) {
     vm._isMounted = true
     callHook(vm, 'mounted')

@@ -1,5 +1,8 @@
 /* @flow */
-
+/**
+ * @author yls
+ * 运行时解析模板的方法
+ */
 import config from 'core/config'
 import { warn, cached } from 'core/util/index'
 import { mark, measure } from 'core/util/perf'
@@ -14,6 +17,7 @@ const idToTemplate = cached(id => {
   return el && el.innerHTML
 })
 
+// 运行时处理模板，解析html文本
 const mount = Vue.prototype.$mount
 Vue.prototype.$mount = function (
   el?: string | Element,

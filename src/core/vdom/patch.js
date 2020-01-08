@@ -503,7 +503,16 @@ export function createPatchFunction (backend) {
       if (isDef(c) && sameVnode(node, c)) return i
     }
   }
-
+  
+  /**
+   * @param oldVnode 老vnode
+   * @param vnode 新vnode
+   * @param insertedVnodeQueue 插入的Vnode队列
+   * @param ownerArray
+   * @param index
+   * @param removeOnly
+   * 具体vnode比较方法
+   */
   function patchVnode (
     oldVnode,
     vnode,
@@ -517,11 +526,13 @@ export function createPatchFunction (backend) {
       return
     }
 
+    // 如果已经存在了dom,且属于一次渲染
     if (isDef(vnode.elm) && isDef(ownerArray)) {
-      // clone reused vnode
+      // 克隆重用的vnode
       vnode = ownerArray[index] = cloneVNode(vnode)
     }
 
+    // 先把vnode的dom设置为老的vnode的dom
     const elm = vnode.elm = oldVnode.elm
 
     if (isTrue(oldVnode.isAsyncPlaceholder)) {
@@ -703,7 +714,15 @@ export function createPatchFunction (backend) {
       return node.nodeType === (vnode.isComment ? 8 : 3)
     }
   }
-
+  
+  /**
+   * @param oldVnode
+   * @param vnode
+   * @param hydrating
+   * @param removeOnly
+   * @return {elm}
+   * todo 将vnode处理到视图的接口方法
+   */
   return function patch (oldVnode, vnode, hydrating, removeOnly) {
     // 如果该节点的新虚拟节点为空，就销毁老节点
     if (isUndef(vnode)) {
@@ -722,11 +741,11 @@ export function createPatchFunction (backend) {
       isInitialPatch = true
       createElm(vnode, insertedVnodeQueue)
     } else { // 否则就进行更深入的比对
-      // todo....
+      // todo isRealElement: 是真实元素
       const isRealElement = isDef(oldVnode.nodeType)
       // 如果没有真实元素并且是相同的节点，就选择更新
       if (!isRealElement && sameVnode(oldVnode, vnode)) {
-        // 循环遍历子节点配置
+        // 循环遍历子节点配置, diff算法
         patchVnode(oldVnode, vnode, insertedVnodeQueue, null, null, removeOnly)
       } else {
         if (isRealElement) {
@@ -761,7 +780,7 @@ export function createPatchFunction (backend) {
         // 父节点dom
         const parentElm = nodeOps.parentNode(oldElm)
 
-        // 创建新的dom节点
+        // 创建新的dom节点，挂载在vnode.elm上
         createElm(
           vnode,
           insertedVnodeQueue,

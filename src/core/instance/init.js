@@ -13,26 +13,56 @@ import { extend, mergeOptions, formatComponentName } from '../util/index'
 let uid = 0
 
 export function initMixin (Vue: Class<Component>) {
+  /**
+   * @author yls 2020-01-06
+   * @param options
+   * @private
+   * 给构造函数原型挂载_init函数
+   * 实际构造方法，初始化实例。并返回，关键方法
+   * 1. initLifecycle(vm)：初始化一些配置文件，标识属性，判断当前实例是否经过处理，如是否有发布者，与观察者实例等
+   * 2. initEvents(vm)：初始化实例的事件，捕获当前实例的事件，并冒泡传递给父组件，此处对应经过$emit or $on等事件方法
+   * 3. initRender(vm)：初始化实例的关于渲染与更新的方法，对slots 与 scopedSlots作用域插槽进行处理
+   * 4. callHook(vm, 'beforeCreate')：调用beforeCreate生命周期方法，至此，还未进行数据的处理
+   * 5. initInjections(vm)：开始数据的处理，首先，先处理Injections注入的属性
+   * 6. initState(vm)： 在进行数据的处理，包括但不限于 watcher处理：props, data, computed, watch. 将methods方法使用bind属性绑定this
+   * 7. initProvide(vm)： 处理provide注入的数据，至此，数据处理完成。
+   * 8. callHook(vm, 'created')：调用created生命周期方法
+   * 9. 执行 vm.$mount(vm.$options.el)方法，$mount = mountComponent，位于core/instance/lifecycle目录下
+   * 10. 至此，init函数结束，beforeMount 与 mounted生命周期函数，由$mount调用挂载的vm._update进行第一次渲染。vm._update贯穿实例整个生命周期
+   *
+   * --------私有属性------------：
+   * _isVue = true
+   * _uid = uid++
+   * _self = vm
+   * _renderProxy = new Proxy(vm, handlers)
+   * _watcher = null
+   * _inactive = null
+   * _directInactive = false
+   * // (vm._isMounted && !vm._isDestroyed) 判断是否调用beforeUpdate生命周期函数
+   * _isMounted = false
+   * _isDestroyed = false
+   * _isBeingDestroyed = false
+   */
   Vue.prototype._init = function (options?: Object) {
     const vm: Component = this
     // a uid
     vm._uid = uid++
 
     let startTag, endTag
-    /* istanbul ignore if */
+    /* 如果需要，可以忽略 */
     if (process.env.NODE_ENV !== 'production' && config.performance && mark) {
       startTag = `vue-perf-start:${vm._uid}`
       endTag = `vue-perf-end:${vm._uid}`
       mark(startTag)
     }
 
-    // a flag to avoid this being observed
+    // 一个标志，以避免被观察到
     vm._isVue = true
-    // merge options
+    // 合并选项,判断该option是否是一个组件
     if (options && options._isComponent) {
-      // optimize internal component instantiation
-      // since dynamic options merging is pretty slow, and none of the
-      // internal component options needs special treatment.
+      // 优化内部组件实例化
+      // 因为动态选项合并非常慢，而且没有
+      // 内部组件选项需要特殊处理
       initInternalComponent(vm, options)
     } else {
       vm.$options = mergeOptions(
@@ -41,21 +71,35 @@ export function initMixin (Vue: Class<Component>) {
         vm
       )
     }
-    /* istanbul ignore else */
+    /* 判断是否为浏览器环境 */
+    // todo _renderProxy属性暂不清楚作用，创建一个proxy对象
     if (process.env.NODE_ENV !== 'production') {
       initProxy(vm)
     } else {
       vm._renderProxy = vm
     }
-    // expose real self
+    // 将自己绑定到私有属性_self
     vm._self = vm
+    // 添加初始化，找到元素的父元素，并初始化一些配置值，比如是否挂载等等
     initLifecycle(vm)
+    // 初始化事件，在实例上挂载事件属性，并且监听父元素的事件并冒泡给父元素
     initEvents(vm)
+    // 初始化组件的虚拟dom，插槽，作用域插槽，渲染函数，以及$attrs， $listeners
     initRender(vm)
+    // 调用beforeCreate生命周期方法
     callHook(vm, 'beforeCreate')
-    initInjections(vm) // resolve injections before data/props
+    // 在数据/props之前解决注入问题
+    initInjections(vm)
+    /**
+     * @function initState
+     * 开始进行数据绑定
+     * 为props, data, computed, watch创建watcher对象，将methods方法全部用bind绑定this
+     * 因为箭头函数不能绑定this，所以不建议在methods中使用箭头函数
+     */
     initState(vm)
-    initProvide(vm) // resolve provide after data/props
+    // 解决提供数据/props后的问题
+    initProvide(vm)
+    // 调用created生命周期方法
     callHook(vm, 'created')
 
     /* istanbul ignore if */
@@ -65,7 +109,12 @@ export function initMixin (Vue: Class<Component>) {
       measure(`vue ${vm._name} init`, startTag, endTag)
     }
 
+    // 运行时执行的挂载方法，
     if (vm.$options.el) {
+      /**
+       * 如果有el属性，就执行挂载方法
+       * core/instance/lifecycle目录下
+       */
       vm.$mount(vm.$options.el)
     }
   }
@@ -73,7 +122,7 @@ export function initMixin (Vue: Class<Component>) {
 
 export function initInternalComponent (vm: Component, options: InternalComponentOptions) {
   const opts = vm.$options = Object.create(vm.constructor.options)
-  // doing this because it's faster than dynamic enumeration.
+  // 这样做是因为它比动态枚举要快。
   const parentVnode = options._parentVnode
   opts.parent = options.parent
   opts._parentVnode = parentVnode
@@ -90,6 +139,12 @@ export function initInternalComponent (vm: Component, options: InternalComponent
   }
 }
 
+/**
+ *
+ * @param Ctor 实例的原型
+ * @returns {Object} 返回配置函数
+ * todo Ctor.super未知属性
+ */
 export function resolveConstructorOptions (Ctor: Class<Component>) {
   let options = Ctor.options
   if (Ctor.super) {

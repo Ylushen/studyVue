@@ -45,35 +45,54 @@ export function proxy (target: Object, sourceKey: string, key: string) {
   Object.defineProperty(target, key, sharedPropertyDefinition)
 }
 
+/**
+ * @param vm
+ * 进行数据的绑定
+ */
 export function initState (vm: Component) {
   vm._watchers = []
   const opts = vm.$options
+  // 监听实例的props属性
   if (opts.props) initProps(vm, opts.props)
+  // 绑定数据方法,不能使用箭头函数，因为箭头函数无法绑定this
   if (opts.methods) initMethods(vm, opts.methods)
+  // 判断是否有data数据，如果没有，就绑定一个空数据，如果有，就进行数据监听
   if (opts.data) {
     initData(vm)
   } else {
     observe(vm._data = {}, true /* asRootData */)
   }
+  // 初始化计算属性
   if (opts.computed) initComputed(vm, opts.computed)
   if (opts.watch && opts.watch !== nativeWatch) {
     initWatch(vm, opts.watch)
   }
 }
 
+/**
+ * @param vm
+ * @param propsOptions
+ * 1. 先创建一个空对象，vm._props，作为数据的连接点
+ * 2. 遍历options.props对象，获取props的value和key
+ * 3. defineReactive方法，绑定value跟key到props对象上
+ */
 function initProps (vm: Component, propsOptions: Object) {
   const propsData = vm.$options.propsData || {}
   const props = vm._props = {}
-  // cache prop keys so that future props updates can iterate using Array
-  // instead of dynamic object key enumeration.
+  // 缓存prop键，以便将来的prop更新可以使用Array进行迭代
+  // 而不是动态对象键枚举。
   const keys = vm.$options._propKeys = []
+  // 判断当前节点是不是根节点
   const isRoot = !vm.$parent
-  // root instance props should be converted
+  // 如果该实例有父节点，就不是根节点
+  // 就给当前节点一个静态标记，不进行双向绑定
   if (!isRoot) {
     toggleObserving(false)
   }
+  // 循环遍历props的key
   for (const key in propsOptions) {
     keys.push(key)
+    // 获取props的值
     const value = validateProp(key, propsOptions, propsData, vm)
     /* istanbul ignore else */
     if (process.env.NODE_ENV !== 'production') {
@@ -85,6 +104,7 @@ function initProps (vm: Component, propsOptions: Object) {
           vm
         )
       }
+      // 对数据进行监听，如果该属性变化，则通知订阅者进行更新
       defineReactive(props, key, value, () => {
         if (!isRoot && !isUpdatingChildComponent) {
           warn(
@@ -97,18 +117,27 @@ function initProps (vm: Component, propsOptions: Object) {
         }
       })
     } else {
+      // 如果是在生产模式中
+      // 对数据进行监听，如果该属性变化，则通知订阅者进行更新
       defineReactive(props, key, value)
     }
-    // static props are already proxied on the component's prototype
-    // during Vue.extend(). We only need to proxy props defined at
-    // instantiation here.
+    // 静态道具已经代理在组件的原型上
+    // 在Vue.extend（）期间。 我们只需要代理定义在
+    // 此处的实例化。
     if (!(key in vm)) {
+      // 在实例上挂载_props方法，返回key
       proxy(vm, `_props`, key)
     }
   }
   toggleObserving(true)
 }
 
+/**
+ * @param vm
+ * 1. 先获取数据，判断数据是否为方法，还是对象
+ * 2. 对属性名进行重复检测，在props和methods中，检查重名
+ * 3. 使用observe方法进行处理
+ */
 function initData (vm: Component) {
   let data = vm.$options.data
   data = vm._data = typeof data === 'function'
@@ -122,7 +151,7 @@ function initData (vm: Component) {
       vm
     )
   }
-  // proxy data on instance
+  // 实例上的代理数据
   const keys = Object.keys(data)
   const props = vm.$options.props
   const methods = vm.$options.methods
@@ -166,10 +195,15 @@ export function getData (data: Function, vm: Component): any {
 
 const computedWatcherOptions = { lazy: true }
 
+/**
+ * @param vm
+ * @param computed
+ *
+ */
 function initComputed (vm: Component, computed: Object) {
-  // $flow-disable-line
+  // 创建一个计算属性的监听对象
   const watchers = vm._computedWatchers = Object.create(null)
-  // computed properties are just getters during SSR
+  // 判断当前环境是否为服务器端渲染 server side render
   const isSSR = isServerRendering()
 
   for (const key in computed) {
@@ -183,7 +217,7 @@ function initComputed (vm: Component, computed: Object) {
     }
 
     if (!isSSR) {
-      // create internal watcher for the computed property.
+      // 为计算的属性创建内部监视程序。
       watchers[key] = new Watcher(
         vm,
         getter || noop,
@@ -259,6 +293,7 @@ function createGetterInvoker(fn) {
   }
 }
 
+// 通过bind绑定数据的this指向
 function initMethods (vm: Component, methods: Object) {
   const props = vm.$options.props
   for (const key in methods) {
@@ -316,10 +351,14 @@ function createWatcher (
   return vm.$watch(expOrFn, handler, options)
 }
 
+/**
+ * @param Vue
+ * 挂载 $data, $props, $set, $del, $watch 方法
+ */
 export function stateMixin (Vue: Class<Component>) {
-  // flow somehow has problems with directly declared definition object
-  // when using Object.defineProperty, so we have to procedurally build up
-  // the object here.
+  // 流以某种方式对直接声明的定义对象有问题
+  // 使用Object.defineProperty时，因此我们必须在程序上进行构建
+  // 这里的对象。
   const dataDef = {}
   dataDef.get = function () { return this._data }
   const propsDef = {}
@@ -336,12 +375,15 @@ export function stateMixin (Vue: Class<Component>) {
       warn(`$props is readonly.`, this)
     }
   }
+  // 对$data和$props属性进行代理，将_data, _props属性反馈到this上
   Object.defineProperty(Vue.prototype, '$data', dataDef)
   Object.defineProperty(Vue.prototype, '$props', propsDef)
 
+  // 通过内置的set,del方法，能够删除对象和数组，并且会触发更新
   Vue.prototype.$set = set
   Vue.prototype.$delete = del
 
+  // https://cn.vuejs.org/v2/api/#vm-watch vue官方文档
   Vue.prototype.$watch = function (
     expOrFn: string | Function,
     cb: any,

@@ -1,3 +1,5 @@
-let a = []
-a.splice(0, 1, '1')
+let a = {}
+a.get = () => {
+  return {aaa: 123123}
+}
 console.log(a)
