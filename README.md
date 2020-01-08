@@ -1,5 +1,8 @@
 #文档分享 
 ### yulusheng52@qq.com(一起进步)
+    gitlab: https://git.lug.ustc.edu.cn/yls666666/study
+    码云：https://gitee.com/yulushen/vue_study
+    github: https://github.com/Ylushen/studyVue
 ###一、目录结构
 ```
 scripts                 # 与构建相关的脚本和配置文件
