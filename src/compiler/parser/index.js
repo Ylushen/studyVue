@@ -405,10 +405,10 @@ export function parse (
         }
       }
     },
-    // todo...
+    // 注释触发的方法
     comment (text: string, start, end) {
-      // adding anyting as a sibling to the root node is forbidden
-      // comments should still be allowed, but ignored
+      // 禁止将任何东西作为同级添加到根节点
+      // 仍应允许使用注释，但忽略
       if (currentParent) {
         const child: ASTText = {
           type: 3,
