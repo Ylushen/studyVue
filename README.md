@@ -62,18 +62,18 @@ ylsTest                 # 个人仿照源码实现的小demo
 Observer的原理，vue2.0版本中，利用了js的Object.defineProperty()方法。
     ```javascript
     // 大概类似于这种
-    let val = '';
-    Object.defineProperty(data, key, {
-      enumerable: true,
-      configurable: true,
-      get() {
-        // todo1... 在获取属性值前触发的操作
-        return val;
-      },
-      set(value) {
-        val = value;
-        // todo2... 在设置属性值后触发的操作
-      }
+           let val = '';
+           Object.defineProperty(data, key, {
+             enumerable: true,
+             configurable: true,
+             get() {
+               // todo1... 在获取属性值前触发的操作
+               return val;
+             },
+             set(value) {
+               val = value;
+               // todo2... 在设置属性值后触发的操作
+             }
     });
     ```
    
@@ -140,19 +140,21 @@ pop, sort, splice, 'reverse'。正因为如此,vue才会有一个数组操作的
 9. 以上就是vue的数据侦听原理。当然，实际原理中的代码不会只有这么简单，比如，源码中的dep并不是一个数组，而是一个Dep类，
 它有自己的调用方法，而且添加dep不会使用数组的查重方式，而是将收集订阅的方法放入了Watcher中，通过每一个Watcher有一个保存dep实例的id的map,
 因为对象查重比数组要方便有效的多，能节约性能。这些小细节都是必须深入到源码中，才能理解得到其中的奥秘的。
-    ```
-   // 源码中，get方法里，调用dep.push(watcher),实际执行的是这段代码
-   // this指向的Watcher实例
-    addDep (dep: Dep) {
-        const id = dep.id
-       // newDepIds是存储dep实例id的map。
-        if (!this.newDepIds.has(id)) {
-         this.newDepIds.add(id)
-         this.newDeps.push(dep)
-         if (!this.depIds.has(id)) {
-           dep.addSub(this)
-         }
-        }
+    ```typescript
+    class Watcher {
+       // 源码中，get方法里，调用dep.push(watcher),实际执行的是这段代码
+       // this指向的Watcher实例
+      addDep (dep : Dep) {
+              const id = dep.id;
+             // newDepIds是存储dep实例id的map。
+              if (!this.newDepIds.has(id)) {
+               this.newDepIds.add(id);
+               this.newDeps.push(dep);
+               if (!this.depIds.has(id)) {
+                 dep.addSub(this)
+               }
+              }
+          }
     }
     ```
 **以上就是对vue源码中数据侦听源码(core/observer)的一个大致的分享。**
@@ -185,7 +187,7 @@ render的作用就是在调用实例的_watcher._update方法时，生成新的v
 6. 最后，通过生成器generate处理后，生成了字符串代码。比如:
     ```
    字符串代码: _c('div',{attrs:{"id":"app"}},[_v("\n  "+_s(aaa)+"\n")])
-   可以通过render = new Function(with(this){return _c('div',{attrs:{"id":"app"}},[_v("\n  "+_s(aaa)+"\n")])})   
+   可以通过render = new Function(with(this){return _c('div',{attrs:{"id":"app"}},[_v("\n  "+_s(aaa)+"\n")])})
    ```
 7. 将该段解析的代码，解析成可执行的代码，这其中的关键，在于with(this)，通过这种方式，可以将this的属性，直接不用加前缀的调用。
 这样，就可以直接拉区vm实例上对应的属性，渲染成静态的新的vnode，然后再传给_update当作参数使用。
