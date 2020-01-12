@@ -406,8 +406,19 @@ export function createPatchFunction (backend) {
       removeNode(vnode.elm)
     }
   }
-
+  
+  /**
+   * @param parentElm
+   * @param oldCh 旧子节点数组
+   * @param newCh 新子节点数组
+   * @param insertedVnodeQueue
+   * @param removeOnly
+   * 新旧节点的对比方法。
+   * diff算法同一层级对比，对比两个list中的元素，目的：尽量找到能复用的元素，重用。因为直接操作dom的性能开支太大。
+   * diff优点：能通过尽量少的对比次数，对比出两个list中的元素
+   */
   function updateChildren (parentElm, oldCh, newCh, insertedVnodeQueue, removeOnly) {
+    // 未比较的新旧元素下标和新旧元素本身
     let oldStartIdx = 0
     let newStartIdx = 0
     let oldEndIdx = oldCh.length - 1
@@ -416,40 +427,48 @@ export function createPatchFunction (backend) {
     let newEndIdx = newCh.length - 1
     let newStartVnode = newCh[0]
     let newEndVnode = newCh[newEndIdx]
+    // oldKeyToIdx 存储key的map
     let oldKeyToIdx, idxInOld, vnodeToMove, refElm
-
-    // removeOnly is a special flag used only by <transition-group>
-    // to ensure removed elements stay in correct relative positions
-    // during leaving transitions
+  
+    // removeOnly是仅由<transition-group>使用的特殊标志
+    // 确保移除的元素保持正确的相对位置
+    // 在离开过渡期间
     const canMove = !removeOnly
 
     if (process.env.NODE_ENV !== 'production') {
       checkDuplicateKeys(newCh)
     }
-
+    // 判断条件，当开始下标>=结束下下标后，说明list比对完成，退出比较
     while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
+      // 重置旧开始节点位置
       if (isUndef(oldStartVnode)) {
         oldStartVnode = oldCh[++oldStartIdx] // Vnode has been moved left
+        // 重置旧结束节点位置
       } else if (isUndef(oldEndVnode)) {
         oldEndVnode = oldCh[--oldEndIdx]
+        // 对比新旧开始节点，如果相同，则跳过比较
       } else if (sameVnode(oldStartVnode, newStartVnode)) {
         patchVnode(oldStartVnode, newStartVnode, insertedVnodeQueue, newCh, newStartIdx)
         oldStartVnode = oldCh[++oldStartIdx]
         newStartVnode = newCh[++newStartIdx]
+        // 对比新旧结束节点，如果相同，则跳过比较
       } else if (sameVnode(oldEndVnode, newEndVnode)) {
         patchVnode(oldEndVnode, newEndVnode, insertedVnodeQueue, newCh, newEndIdx)
         oldEndVnode = oldCh[--oldEndIdx]
         newEndVnode = newCh[--newEndIdx]
+        // 对比新开始节点与旧结束节点，如果相同，拿节点上的elm赋值给我新节点，并比较下一个节点
       } else if (sameVnode(oldStartVnode, newEndVnode)) { // Vnode moved right
         patchVnode(oldStartVnode, newEndVnode, insertedVnodeQueue, newCh, newEndIdx)
         canMove && nodeOps.insertBefore(parentElm, oldStartVnode.elm, nodeOps.nextSibling(oldEndVnode.elm))
         oldStartVnode = oldCh[++oldStartIdx]
         newEndVnode = newCh[--newEndIdx]
+        // 对比新开始节点与旧结束节点，如果相同，拿节点上的elm赋值给我新节点，并比较下一个节点
       } else if (sameVnode(oldEndVnode, newStartVnode)) { // Vnode moved left
         patchVnode(oldEndVnode, newStartVnode, insertedVnodeQueue, newCh, newStartIdx)
         canMove && nodeOps.insertBefore(parentElm, oldEndVnode.elm, oldStartVnode.elm)
         oldEndVnode = oldCh[--oldEndIdx]
         newStartVnode = newCh[++newStartIdx]
+        // 如果新旧对比完成后，进行特殊处理，对比元素的key
       } else {
         if (isUndef(oldKeyToIdx)) oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx)
         idxInOld = isDef(newStartVnode.key)
@@ -468,9 +487,12 @@ export function createPatchFunction (backend) {
             createElm(newStartVnode, insertedVnodeQueue, parentElm, oldStartVnode.elm, false, newCh, newStartIdx)
           }
         }
+        // 如果对比失败，就将新开始节点往中间挪一位
         newStartVnode = newCh[++newStartIdx]
       }
     }
+    // 至此，处理的都是不能复用的节点，新增节点与删除节点，不需要进行比较了
+    // 因为新list或旧list有一个已经被比较完，剩下的已失去对比对象，可以直接操作了
     if (oldStartIdx > oldEndIdx) {
       refElm = isUndef(newCh[newEndIdx + 1]) ? null : newCh[newEndIdx + 1].elm
       addVnodes(parentElm, refElm, newCh, newStartIdx, newEndIdx, insertedVnodeQueue)
@@ -562,14 +584,18 @@ export function createPatchFunction (backend) {
     if (isDef(data) && isDef(i = data.hook) && isDef(i = i.prepatch)) {
       i(oldVnode, vnode)
     }
-
+    
     const oldCh = oldVnode.children
     const ch = vnode.children
+    // 如果节点有属性等数据，且有tag名称,就判断为需要打补丁的节点，将节点进行打补丁
+    // 将属性，样式等尽可能的比对上
     if (isDef(data) && isPatchable(vnode)) {
       for (i = 0; i < cbs.update.length; ++i) cbs.update[i](oldVnode, vnode)
       if (isDef(i = data.hook) && isDef(i = i.update)) i(oldVnode, vnode)
     }
+    // 判断是否文本节点，如果是文本节点再判断是否为相同，如果不同则更新文本
     if (isUndef(vnode.text)) {
+      // 实际对比方法，如果新子节点与旧子节点都存在，则对比两个list
       if (isDef(oldCh) && isDef(ch)) {
         if (oldCh !== ch) updateChildren(elm, oldCh, ch, insertedVnodeQueue, removeOnly)
       } else if (isDef(ch)) {
