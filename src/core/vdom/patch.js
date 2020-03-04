@@ -316,10 +316,10 @@ export function createPatchFunction (backend) {
       if (isDef(i.insert)) insertedVnodeQueue.push(vnode)
     }
   }
-
-  // set scope id attribute for scoped CSS.
-  // this is implemented as a special case to avoid the overhead
-  // of going through the normal attribute patching process.
+  
+  // 为作用域CSS设置作用域ID属性。
+  // 这是一种特殊情况，可以避免开销
+  // 进行正常的属性修补过程。
   function setScope (vnode) {
     let i
     if (isDef(i = vnode.fnScopeId)) {
@@ -470,10 +470,12 @@ export function createPatchFunction (backend) {
         newStartVnode = newCh[++newStartIdx]
         // 如果新旧对比完成后，进行特殊处理，对比元素的key
       } else {
+        // oldKeyToIdx 是当前children的所有key的map {key, 数组中的位置i}
         if (isUndef(oldKeyToIdx)) oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx)
         idxInOld = isDef(newStartVnode.key)
-          ? oldKeyToIdx[newStartVnode.key]
-          : findIdxInOld(newStartVnode, oldCh, oldStartIdx, oldEndIdx)
+            ? oldKeyToIdx[newStartVnode.key]
+            // 对比新node与老node列表未复用的node的key，跟tag获得复用对象
+            : findIdxInOld(newStartVnode, oldCh, oldStartIdx, oldEndIdx)
         if (isUndef(idxInOld)) { // New element
           createElm(newStartVnode, insertedVnodeQueue, parentElm, oldStartVnode.elm, false, newCh, newStartIdx)
         } else {
@@ -636,7 +638,7 @@ export function createPatchFunction (backend) {
   // deep updates (#7063).
   const isRenderedModule = makeMap('attrs,class,staticClass,staticStyle,key')
 
-  // Note: this is a browser-only function so we can assume elms are DOM nodes.
+  // 注意：这是一个仅用于浏览器的功能，因此我们可以假定elms是DOM节点。
   function hydrate (elm, vnode, insertedVnodeQueue, inVPre) {
     let i
     const { tag, data, children } = vnode

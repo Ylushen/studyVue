@@ -30,6 +30,8 @@ ylsTest                 # 个人仿照源码实现的小demo
 
 参考：《深入浅出Vue.js》--刘博文
 ```
+####实例生命周期详解
+![Image text](ylsTest/images/Vue.png)
 
 ### 二、运行时进行的操作
 1. 在生产环境中，在引入Vue的时候，core中实际执行的代码只有index.js中的代码，
@@ -49,7 +51,7 @@ ylsTest                 # 个人仿照源码实现的小demo
 6. 至此，将生成的模板挂载到实际dom中，实例化完成。在之后每次数据模型进行更新，都会触发_watcher.update方法,
 重新生成新的vnode，通过diff算法，对比出实际变化的dom，替换掉之后重新渲染到前端代码中。这就形成了类似MVVM的模式
 
-![Image text](ylsTest/mvvm.png)
+![Image text](ylsTest/images/mvvm.png)
 
 ### 三、各个模块的概述
 #### 1. observer

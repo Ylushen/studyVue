@@ -35,8 +35,8 @@ export function createElement (
 ): VNode | Array<VNode> {
   if (Array.isArray(data) || isPrimitive(data)) {
     normalizationType = children
-    children = data
-    data = undefined
+    children = data // data是数组时判断赋值给children
+    data = undefined // 但是data参数被赋值为空，所以只能空过，不能调换位置
   }
   if (isTrue(alwaysNormalize)) {
     normalizationType = ALWAYS_NORMALIZE
