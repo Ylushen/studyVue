@@ -30,7 +30,7 @@ ylsTest                 # 个人仿照源码实现的小demo
 
 参考：《深入浅出Vue.js》--刘博文
 ```
-####实例生命周期详解
+#### 实例生命周期详解
 ![Image text](ylsTest/images/Vue.png)
 
 ### 二、运行时进行的操作
